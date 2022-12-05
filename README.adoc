@@ -1,0 +1,245 @@
+= README
+life888888
+:experimental:
+:doctype: article
+:encoding: utf-8
+:lang: zh-tw
+:imagedir: images
+:numbered:
+:revnumber: 1.0.0
+:revdate: 2022-12-04
+:author: life888888
+:project-name: docker-apt-cacher-ng
+:project-version: 1.0.0
+:project-repo-url: https://github.com/{author}/{project-name}
+ifdef::env-github[]
+:toc:
+:toc-placement: preamble
+endif::[]
+ifndef::env-github[]
+:toc:
+:toc-placement: left
+endif::[]
+
+
+docker-apt-cacher-ng is a apt-cacher-ng service container base on ubuntu 20.04 for developer.
+
+== Overview
+
+When using Ubuntu base docker image or VM (VirtualBox) / Vagrant to update or install software, especially when testing or making Kubernetes Practice Environments, it may be necessary to install multiple machines and repeat the test to install the same package multiple times.
+
+Different VMs may download the same package multiple times, which may increase network traffic and waste installation time (Download time).
+
+So we need to use apt-cacher-ng to act as apt cache server.
+
+== How to contribute / do it yourself?
+
+=== Requirements
+
+You need the following tools:
+
+* A bash compliant command line
+* Docker installed and in your path
+
+== Download Source Code
+
+Please download source code: {project-repo-url}/archive/refs/heads/main.zip
+
+Unzip file.
+
+=== How to build ?
+
+[source,bash]
+----
+$ ./build-docker-apt-cacher-ng.sh
+----
+
+== How to use it ?
+
+=== Your Host (as apt-cacher-ng Server)
+
+[source,bash]
+----
+# Method 1:
+$ mkdir -p test/extval
+$ cd test
+$ docker run -d -p 3142:3142/tcp -it -v `pwd`/extval:/extval docker-apt-cacher-ng
+
+$ docker ps
+CONTAINER ID   IMAGE                  COMMAND                  CREATED         STATUS         PORTS                                       NAMES
+2eab8a8a632c   docker-apt-cacher-ng   "/docker-entrypoint.…"   8 seconds ago   Up 7 seconds   0.0.0.0:3142->3142/tcp, :::3142->3142/tcp   infallible_feistel
+
+# stop docker-apt-cacher-ng container
+$ docker stop 2eab8a8a632c
+
+# Method 2:
+# or run interactive mode
+$ mkdir -p test/extval
+$ cd test
+$ docker run -it -p 3142:3142/tcp -it -v `pwd`/extval:/extval docker-apt-cacher-ng
+
+----
+
+In Host: 
+
+Use browser(Firefox) open http://yourhost:3142 (http://localhost:3142)
+
+You can see:
+
+[source,bash]
+----
+EITHER: Configure APT to use a HTTP proxy by specifying it in apt.conf or related configuration files, see apt.conf manual page for details. Server and Port need to match the values used to visit this page. For example, edit /etc/apt/apt.conf (or create a new file called like /etc/apt/apt.conf.d/00aptproxy) and add the line: 
+
+Acquire::http::Proxy "http://172.17.0.2:3142";
+----
+
+or 
+
+[source,bash]
+----
+$ curl http://yourhost:3142
+----
+
+[source,bash]
+----
+$ ip a
+...
+4: docker0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default 
+    link/ether 02:42:66:60:7f:43 brd ff:ff:ff:ff:ff:ff
+    inet 172.17.0.1/16 brd 172.17.255.255 scope global docker0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42:66ff:fe60:7f43/64 scope link 
+       valid_lft forever preferred_lft forever
+5: vboxnet0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc fq_codel state UP group default qlen 1000
+    link/ether 0a:00:27:00:00:00 brd ff:ff:ff:ff:ff:ff
+    inet 192.168.56.1/24 brd 192.168.56.255 scope global vboxnet0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::800:27ff:fe00:0/64 scope link 
+       valid_lft forever preferred_lft forever
+...       
+----
+
+docker0 is my docker network interface (172.17.0.1)
+
+vboxnet0 is my virtualbox host only network interface (192.168.56.1)
+
+=== Your Host - file Preview 1 
+init folder tree
+
+[source,bash]
+----
+docker-apt-cacher-ng/test$ tree
+.
+└── extval
+    └── var
+        ├── cache
+        │   └── apt-cacher-ng
+...
+
+76 directories, 38 files
+----
+
+
+=== Your apt-cacher-ng client (Your other docker/VM/...)
+
+
+==== Docker
+./etc/apt/apt.conf (In Your Dockerfile) 
+[source,bash]
+----
+Acquire::http::Proxy "http://172.17.0.2:3142";
+----
+
+
+.Example Test - if we have many ubuntu docker container or build to install something xxx
+[source,bash]
+----
+# Host
+docker run -it ubuntu:20.04 /bin/bash
+
+# In container
+# use apt-cacher-ng server
+cat <<EOF >> /etc/apt/apt.conf
+Acquire::http::Proxy "http://172.17.0.2:3142";
+EOF
+
+# get execution time of `apt update`?
+time apt update
+
+# get execution time of `apt upgrade`?
+time apt -y upgrade
+
+apt install xxx
+
+exit
+----
+
+apt use apt-cacher-ng server
+
+* 1st container
+** apt update  - 1st run - real	0m36.639s
+** apt update  - 2nd run - real	0m6.329s
+** apt upgrade - real	0m6.640s
+
+
+* 2nd container
+** apt update  - real	0m2.667s
+** apt upgrade - real	0m2.309s
+
+apt default (not use apt-cacher-ng server)
+
+* 1st container
+** apt update  - real	0m21.429s
+** apt upgrade - real	0m5.060s
+* 2nd container
+** apt update  - real	0m13.884s
+** apt upgrade - real	0m4.943s
+
+
+==== VM
+./etc/apt/apt.conf (In Your VM - have hostonly)
+[source,bash]
+----
+Acquire::http::Proxy "http://192.168.56.1:3142";
+----
+
+Because we are mapping port for host, so we can use host ip (docker, vboxnet0 network interface ip)
+
+
+
+=== Your Host - file Preview 2
+
+[source,bash]
+----
+docker-apt-cacher-ng/test$ tree
+.
+└── extval
+    └── var
+        ├── cache
+        │   └── apt-cacher-ng
+...
+        └── log
+            └── apt-cacher-ng
+                ├── apt-cacher.err
+                └── apt-cacher.log
+
+76 directories, 38 files
+----
+
+Now You can find in extval add many directories and files.
+
+And if you have other VM or Dockerfile need run apt update or apt install, you can setup their /etc/apt/apt.conf file, and point to your host ip and port 3142.
+
+[IMPORTANT]
+====
+If we are use docker run docker-apt-cacher-ng with different path, docker-apt-cacher-ng will not able to access previous download cache file.
+
+Notice docker run command use **-v `pwd`/extval:/extval**, you need run it in the same path, and docker-apt-cacher-ng will use previous download cache file.
+
+And we can copy `extval` directory to another offline environment to provide offline docker build or VM run apt update or install.
+====
+
+
+== License
+MIT License Copyright (c) 2022 life888888
+
